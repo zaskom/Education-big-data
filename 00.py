@@ -5,10 +5,6 @@ import seaborn as sns
 from sklearn.cluster import KMeans
 from sklearn.preprocessing import StandardScaler
 import platform
-
-# ==========================================
-# 🔧 設定中文字型 (解決空白/方塊問題)
-# ==========================================
 def set_font():
     system_name = platform.system()
     if system_name == "Windows":
@@ -17,20 +13,13 @@ def set_font():
         plt.rcParams['font.sans-serif'] = ['Arial Unicode MS', 'Heiti TC']
     else:
         plt.rcParams['font.sans-serif'] = ['SimHei', 'WenQuanYi Micro Hei']
-    
     plt.rcParams['axes.unicode_minus'] = False 
-
-# 設定繪圖風格
 plt.style.use('seaborn-v0_8')
 plt.switch_backend('Agg')
 set_font() 
-
-def process_and_analyze(file_obj):
-    # 修正：因為移除了圖表3，現在總共只有 9 張圖，所以這裡回傳 9 個 None
+def process_and_analyze(file_obj):    
     if file_obj is None:
         return [None] * 9
-
-    # 讀取數據
     try:
         df = pd.read_csv(file_obj.name, encoding='big5')
     except:
@@ -38,25 +27,16 @@ def process_and_analyze(file_obj):
             df = pd.read_csv(file_obj.name, encoding='utf-8')
         except Exception as e:
             raise gr.Error(f"讀取失敗: {str(e)}")
-
-    # 數據前處理
     if 'dp002_timestamp' in df.columns:
         df['dt_timestamp'] = pd.to_datetime(df['dp002_timestamp'], errors='coerce')
         df['hour'] = df['dt_timestamp'].dt.hour
         df['weekday'] = df['dt_timestamp'].dt.day_name()
-    
-    # 轉數值
     numeric_cols = ['dp001_review_finish_rate', 'dp001_prac_score_rate', 'dp001_prac_during_time']
     for col in numeric_cols:
         if col in df.columns:
             df[col] = pd.to_numeric(df[col], errors='coerce')
-
     df_full = df.copy()
-
-    # 針對前幾張圖，保留原有的嚴格過濾邏輯
     df_clean = df.dropna(subset=['dp002_object_definition_name_zh-TW', 'dp001_record_plus_view_action'])
-
-    # --- 圖表 1: 時間分析 ---
     fig_time = plt.figure(figsize=(10, 5))
     if 'hour' in df_clean.columns:
         hourly_counts = df_clean['hour'].value_counts().sort_index()
@@ -65,8 +45,6 @@ def process_and_analyze(file_obj):
         plt.xlabel('Hour', fontsize=12)
         plt.xticks(rotation=0)
     plt.tight_layout()
-
-    # --- 圖表 2: 行為統計 ---
     fig_action = plt.figure(figsize=(10, 5))
     if 'dp001_record_plus_view_action' in df_clean.columns:
         action_counts = df_clean['dp001_record_plus_view_action'].value_counts().head(10)
@@ -74,10 +52,6 @@ def process_and_analyze(file_obj):
         plt.title('Top Learning Actions (熱門操作行為)', fontsize=14)
         plt.gca().invert_yaxis()
     plt.tight_layout()
-
-    # (已移除) --- 圖表 3: 內容表現 --- 
-
-    # --- 圖表 4: 學生分群 ---
     fig_cluster = plt.figure(figsize=(10, 6))
     if 'PseudoID' in df_clean.columns:
         student_features = df_clean.groupby('PseudoID').agg({
@@ -85,13 +59,11 @@ def process_and_analyze(file_obj):
             'dp001_prac_score_rate': 'mean',
             'dp002_verb_id': 'count'
         }).dropna()
-
         if len(student_features) > 3:
             scaler = StandardScaler()
             scaled_features = scaler.fit_transform(student_features)
             kmeans = KMeans(n_clusters=3, random_state=42)
             clusters = kmeans.fit_predict(scaled_features)
-            
             scatter = plt.scatter(
                 student_features['dp001_review_finish_rate'], 
                 student_features['dp001_prac_score_rate'], 
@@ -105,66 +77,43 @@ def process_and_analyze(file_obj):
             plt.ylabel('Practice Score', fontsize=12)
             plt.colorbar(scatter, label='Cluster')
     plt.tight_layout()
-
-    # --- 圖表 5: 關聯分析 ---
     fig_corr = plt.figure(figsize=(8, 6))
     if 'PseudoID' in df_clean.columns and len(student_features) > 0:
         corr_matrix = student_features.corr()
         sns.heatmap(corr_matrix, annot=True, cmap='coolwarm', fmt=".2f")
         plt.title('Behavior Correlation (行為變數相關性)', fontsize=14)
     plt.tight_layout()
-
-    # --- 圖表 6: 每週學習模式 ---
     fig_week = plt.figure(figsize=(10, 5))
     if 'weekday' in df_full.columns:
         days_order = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday']
         df_full['weekday'] = pd.Categorical(df_full['weekday'], categories=days_order, ordered=True)
         weekly_counts = df_full['weekday'].value_counts().sort_index()
-        
         sns.barplot(x=weekly_counts.index, y=weekly_counts.values, palette="Blues_d")
         plt.title('Weekly Learning Activity (每週學習活躍度)', fontsize=14)
         plt.ylabel('Activity Count')
         plt.xticks(rotation=45)
     plt.tight_layout()
-
-# --- 圖表 7: 學習動作分布 (改為水平長條圖) ---
-    # 調整畫布大小，讓它寬一點，適合長條圖
     fig_verb = plt.figure(figsize=(10, 6))
     if 'dp002_verb_display_zh_TW' in df_full.columns:
-        # 取前 6 大動作
         verb_counts = df_full['dp002_verb_display_zh_TW'].value_counts().head(6)
-        
         if not verb_counts.empty:
-            # 計算百分比，以便顯示在圖上
             total = verb_counts.sum()
             verb_pct = (verb_counts / total * 100).round(1)
-            
-            # 使用 Seaborn 繪製水平長條圖
-            # y 是類別名稱，x 是數量
             ax = sns.barplot(x=verb_counts.values, y=verb_counts.index, palette='pastel')
-            
             plt.title('Action Verb Distribution (主要學習動作分布 - Top 6)', fontsize=14)
             plt.xlabel('Count (次數)')
             plt.ylabel('Action Verb (動作)')
-            
-            # --- 進階：在長條圖末端加上百分比數字 ---
-            # 遍歷每一個 patch (長條)
             for i, p in enumerate(ax.patches):
                 width = p.get_width()
-                # 在長條圖的右側添加文字 (數量 + 百分比)
-                ax.text(width + (width * 0.01),       # x 座標位置 (稍微在 Bar 右邊一點)
-                        p.get_y() + p.get_height()/2, # y 座標位置 (Bar 的中間)
-                        f'{int(width)} ({verb_pct.iloc[i]}%)', # 顯示文字內容
-                        ha='left',                    # 水平對齊
-                        va='center',                  # 垂直對齊
+                ax.text(width + (width * 0.01),      
+                        p.get_y() + p.get_height()/2, 
+                        f'{int(width)} ({verb_pct.iloc[i]}%)', 
+                        ha='left',                    
+                        va='center',                  
                         fontsize=10,
                         color='black')
-            # 稍微擴展 X 軸範圍，讓最右邊的文字不會被切掉
             plt.xlim(right=total * 1.15) 
-
     plt.tight_layout()
-
-    # --- 圖表 8: 影片觀看完成率分布 ---
     fig_hist = plt.figure(figsize=(10, 5))
     if 'dp001_review_finish_rate' in df_full.columns:
         data_hist = df_full['dp001_review_finish_rate'].dropna()
@@ -172,21 +121,16 @@ def process_and_analyze(file_obj):
         plt.title('Video Completion Rate Distribution (影片完成率分布)', fontsize=14)
         plt.xlabel('Finish Rate (%)')
     plt.tight_layout()
-
-    # --- 圖表 9: 練習時間與成績關係 ---
     fig_prac = plt.figure(figsize=(10, 6))
     if 'dp001_prac_during_time' in df_full.columns and 'dp001_prac_score_rate' in df_full.columns:
         mask = (df_full['dp001_prac_during_time'] < 3600) & (df_full['dp001_prac_during_time'] > 0)
         subset = df_full[mask].dropna(subset=['dp001_prac_score_rate'])
-        
         if not subset.empty:
             sns.scatterplot(data=subset, x='dp001_prac_during_time', y='dp001_prac_score_rate', alpha=0.5, color='teal')
             plt.title('Practice Duration vs Score (練習時長與成績關係)', fontsize=14)
             plt.xlabel('Duration (Seconds)')
             plt.ylabel('Score Rate')
     plt.tight_layout()
-
-    # --- 圖表 10: 高參與度學生排名 ---
     fig_top_std = plt.figure(figsize=(10, 6))
     if 'PseudoID' in df_full.columns:
         top_students = df_full['PseudoID'].value_counts().head(15)
@@ -196,29 +140,21 @@ def process_and_analyze(file_obj):
         plt.ylabel('Interaction Count')
         plt.xticks(rotation=45)
     plt.tight_layout()
-
-    # 移除 fig_item，回傳 9 個物件
     return fig_time, fig_action, fig_cluster, fig_corr, fig_week, fig_verb, fig_hist, fig_prac, fig_top_std
-
-# Gradio 介面
 with gr.Blocks(title="學生學習行為深度分析系統 V2.1") as demo:
     gr.Markdown("# 🎓 數位學習行為深度分析系統")
-    
     with gr.Row():
         file_input = gr.File(label="上傳 CSV", file_types=[".csv"])
         analyze_btn = gr.Button("開始分析", variant="primary")
-
     with gr.Tabs():
         with gr.TabItem("📊 基礎分析"):
             with gr.Row():
                 plot_time = gr.Plot(label="時間分析")
                 plot_action = gr.Plot(label="行為序列")
             with gr.Row():
-                # 圖表3已移除，這裡只放圖表4，讓它獨佔一行或你可以自行安排
                 plot_cluster = gr.Plot(label="學生分群")
             with gr.Row():
                 plot_corr = gr.Plot(label="關聯分析")
-        
         with gr.TabItem("📈 進階洞察"):
             with gr.Row():
                 plot_week = gr.Plot(label="每週模式")
@@ -227,14 +163,12 @@ with gr.Blocks(title="學生學習行為深度分析系統 V2.1") as demo:
                 plot_hist = gr.Plot(label="影片完成率")
                 plot_prac = gr.Plot(label="練習與成績")
             plot_top_std = gr.Plot(label="高參與學生")
-
     analyze_btn.click(
         fn=process_and_analyze, 
         inputs=file_input, 
-        # 移除了 plot_item，列表剩下 9 個
         outputs=[plot_time, plot_action, plot_cluster, plot_corr, 
                  plot_week, plot_verb, plot_hist, plot_prac, plot_top_std]
     )
-
 if __name__ == "__main__":
+
     demo.launch()
